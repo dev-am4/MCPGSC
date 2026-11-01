@@ -27,6 +27,13 @@ function googleClientId(env: Env): string {
   if (!match) throw new Error('GOOGLE_CLIENT_ID is invalid');
   return match[0];
 }
+function googleClientSecret(env: Env): string {
+  const raw = String(env.GOOGLE_CLIENT_SECRET || '').trim();
+  const match = raw.match(/GOCSPX-[A-Za-z0-9_-]+/);
+  const value = match ? match[0] : raw;
+  if (value.length < 12) throw new Error('GOOGLE_CLIENT_SECRET is invalid');
+  return value;
+}
 function loginUrl(env: Env): string {
   const u = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   u.searchParams.set('client_id', googleClientId(env));
@@ -48,7 +55,7 @@ async function callback(req: Request, env: Env): Promise<Response> {
     throw new HttpError(400, 'Google login verification failed. Please restart the login.');
   const form = new URLSearchParams({
     client_id: googleClientId(env),
-    client_secret: env.GOOGLE_CLIENT_SECRET,
+    client_secret: googleClientSecret(env),
     redirect_uri: appUrl(env) + '/auth/callback',
     code, grant_type: 'authorization_code'
   });
@@ -179,6 +186,17 @@ async function appFetch(req: Request, env: Env): Promise<Response> {
     'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
     'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff'
   } });
+  // Starting Google OAuth does not require D1 or encryption configuration.
+  // Keeping this route isolated makes login resilient to unrelated service issues.
+  if (url.pathname === '/auth/google' && req.method === 'GET') {
+    const state = randomState();
+    const redirect = new URL(loginUrl(env));
+    redirect.searchParams.set('state', state);
+    const response = new Response(null, { status: 302, headers: { Location: redirect.toString() } });
+    response.headers.append('Set-Cookie', cookie('mcpgsc_oauth', state, req, 600));
+    response.headers.set('Cache-Control', 'no-store');
+    return response;
+  }
   validateConfig(env);
   await ensureSchema(env);
   if (req.method === 'GET' && (
@@ -191,15 +209,6 @@ async function appFetch(req: Request, env: Env): Promise<Response> {
   if (req.method === 'GET' && url.pathname === '/oauth/authorize') return authorize(req, env);
   if (req.method === 'POST' && url.pathname === '/oauth/approve') return approve(req, env);
   if (req.method === 'POST' && url.pathname === '/oauth/token') return exchangeToken(req, env);
-  if (url.pathname === '/auth/google' && req.method === 'GET') {
-    const state = randomState();
-    const redirect = new URL(loginUrl(env));
-    redirect.searchParams.set('state', state);
-    const response = new Response(null, { status: 302, headers: { Location: redirect.toString() } });
-    response.headers.append('Set-Cookie', cookie('mcpgsc_oauth', state, req, 600));
-    response.headers.set('Cache-Control', 'no-store');
-    return response;
-  }
   if (url.pathname === '/auth/callback' && req.method === 'GET') return callback(req, env);
   if (url.pathname === '/auth/logout' && req.method === 'POST') {
     guardOrigin(req, env);
