@@ -4,6 +4,7 @@ import { allowedEmail, cookie, createSession, encryptToken, randomState, readSes
 import { detailRows, getAccessToken, getAccount, inspection, listSites, overview } from './google';
 import { handleMcp } from './mcp';
 import { HTML } from './ui';
+import { ensureSchema } from './bootstrap';
 
 const json = (payload: unknown, status = 200) => new Response(JSON.stringify(payload), {
   status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'private, no-store',
@@ -138,7 +139,10 @@ function getDays(input: string | null): number {
 async function appFetch(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
   if (url.pathname === '/health' && req.method === 'GET') return json({ status: 'ok', service: 'mcpgsc' });
-  if (url.pathname === '/mcp') return handleMcp(req, env);
+  if (url.pathname === '/mcp') {
+    await ensureSchema(env);
+    return handleMcp(req, env);
+  }
   if (url.pathname === '/' && req.method === 'GET') return new Response(HTML, { headers: {
     'Content-Type': 'text/html; charset=utf-8',
     'Cache-Control': 'no-cache',
@@ -146,6 +150,7 @@ async function appFetch(req: Request, env: Env): Promise<Response> {
     'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff'
   } });
   validateConfig(env);
+  await ensureSchema(env);
   if (url.pathname === '/auth/google' && req.method === 'GET') {
     const state = randomState();
     const redirect = new URL(loginUrl(env));
@@ -168,6 +173,7 @@ async function appFetch(req: Request, env: Env): Promise<Response> {
 
 async function warmCache(env: Env): Promise<void> {
   validateConfig(env);
+  await ensureSchema(env);
   const result = await env.DB.prepare('SELECT email FROM accounts').all<{ email: string }>();
   for (const account of result.results) {
     try {

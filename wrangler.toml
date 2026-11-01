@@ -7,7 +7,8 @@ workers_dev = true
 [triggers]
 crons = ["0 2 * * *"]
 
+# Wrangler 4.45+ automatically provisions the named D1 database on deploy.
+# Leave database_id absent intentionally; never use placeholder text here.
 [[d1_databases]]
 binding = "DB"
 database_name = "mcpgsc"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
