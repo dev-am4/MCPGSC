@@ -236,7 +236,7 @@ export default {
       return json({ error: message }, status);
     }
   },
-  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil(warmCache(env));
   }
 } satisfies ExportedHandler<Env>;

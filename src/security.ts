@@ -61,7 +61,7 @@ export function randomState(): string {
 }
 
 async function aesKey(env: Env): Promise<CryptoKey> {
-  const raw = fromB64(env.TOKEN_ENCRYPTION_KEY);
+  const raw = Uint8Array.from(fromB64(env.TOKEN_ENCRYPTION_KEY));
   if (raw.length !== 32) throw new Error('TOKEN_ENCRYPTION_KEY must be base64 of 32 bytes');
   return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
 }
@@ -75,8 +75,8 @@ export async function encryptToken(token: string, env: Env): Promise<string> {
 export async function decryptToken(cipher: string, env: Env): Promise<string> {
   const [a, b] = cipher.split('.');
   if (!a || !b) throw new Error('Invalid encrypted credential');
-  const iv = fromB64(a);
-  const clear = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, await aesKey(env), fromB64(b));
+  const iv = Uint8Array.from(fromB64(a));
+  const clear = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, await aesKey(env), Uint8Array.from(fromB64(b)));
   return dec.decode(clear);
 }
 
