@@ -28,6 +28,8 @@ const html = htmlBase.replace('</style>', css + '\n</style>')
 const match = html.match(/<script>([\s\S]*?)<\/script>/);
 assert(match?.[1], 'Inline JavaScript is missing');
 new vm.Script(match[1], { filename: 'mcpgsc-dashboard.js' });
+assert(html.includes('/generated-logo.png?brand=original1'), 'Generated original logo not present');
+assert(html.includes('/generated-favicon.png?brand=original1'), 'Generated original favicon not present');
 for (const name of ['metric-tabs','overview-main','movers-list','contribution-row','wow-chart']) {
   assert(html.includes(name), 'Required dashboard component missing: ' + name);
 }

@@ -12,3 +12,9 @@ crons = ["0 2 * * *"]
 [[d1_databases]]
 binding = "DB"
 database_name = "mcpgsc"
+
+# Serve the actual optimized PNG files generated for the brand.
+[assets]
+directory = "./assets"
+binding = "ASSETS"
+run_worker_first = true

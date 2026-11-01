@@ -127,6 +127,15 @@ Existing read-only MCP tools:
 
 Documentation: [Cloudflare automatic provisioning](https://developers.cloudflare.com/changelog/post/2025-10-24-automatic-resource-provisioning/) · [Google Search Console API](https://developers.google.com/webmaster-tools/v1/api_reference_index)
 
+
+## Actual ImageGen brand files
+
+The dashboard **does not recreate the logo with SVG**. It directly serves the generated design in optimized PNG form:
+- `assets/generated-logo.png` — resized from the originally generated transparent MCPGSC wordmark (dark text/green bars)
+- `assets/generated-favicon.png` — resized from the originally generated teal/white rounded-square icon
+
+Cloudflare Workers serves both through the ASSETS binding. The sidebar places the transparent logo on a pale neutral backplate for contrast in the dark UI. Mobile header and browser tab use the same files. Legacy `/logo.svg`, `/favicon.svg` and `/favicon.ico` URLs redirect to the generated PNG paths. Never substitute a hand-drawn vector for these source artworks.
+
 ## Branding and build fix (2026-11-01)
 
 - The static Worker `/logo.svg` and `/favicon.svg` routes serve the matching dark/mint MCPGSC brand icon and wordmark.

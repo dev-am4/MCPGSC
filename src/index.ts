@@ -4,7 +4,6 @@ import { allowedEmail, cookie, createSession, encryptToken, randomState, readSes
 import { detailRows, getAccessToken, getAccount, inspection, listSites, overview } from './google';
 import { handleMcp } from './mcp';
 import { HTML } from './ui';
-import { LOGO_SVG, FAVICON_SVG } from './brand';
 import { diagnostics } from './diagnostics';
 import { ensureSchema } from './bootstrap';
 import { authDiscovery, registerClient } from './oauth-register';
@@ -156,14 +155,12 @@ function getDays(input: string | null): number {
 
 async function appFetch(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
-  if (req.method === 'GET' && (url.pathname === '/logo.svg' || url.pathname === '/favicon.svg')) {
-    return new Response(url.pathname === '/logo.svg' ? LOGO_SVG : FAVICON_SVG, {
-      headers: { 'Content-Type': 'image/svg+xml; charset=utf-8',
-        'Cache-Control': 'public, max-age=3600', 'X-Content-Type-Options': 'nosniff' }
-    });
+  if (req.method === 'GET' && (url.pathname === '/generated-logo.png' || url.pathname === '/generated-favicon.png')) {
+    return env.ASSETS.fetch(req);
   }
-  if (url.pathname === '/favicon.ico' && req.method === 'GET') {
-    return Response.redirect(new URL('/favicon.svg', url.origin).toString(), 302);
+  if (req.method === 'GET' && (url.pathname === '/logo.svg' || url.pathname === '/favicon.svg' || url.pathname === '/favicon.ico')) {
+    const file = url.pathname === '/logo.svg' ? '/generated-logo.png' : '/generated-favicon.png';
+    return Response.redirect(new URL(file + '?brand=original1', url.origin).toString(), 302);
   }
   if (url.pathname === '/health' && req.method === 'GET') return json({ status: 'ok', service: 'mcpgsc' });
   if (url.pathname === '/mcp') {
