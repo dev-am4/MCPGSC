@@ -1,0 +1,9 @@
+# Local development only. Never commit .dev.vars
+APP_URL="http://localhost:8787"
+GOOGLE_CLIENT_ID="your-oauth-client-id.apps.googleusercontent.com"
+GOOGLE_CLIENT_SECRET="your-oauth-client-secret"
+ALLOWED_EMAILS="your-google-email@gmail.com"
+SESSION_SECRET="replace-with-a-long-random-secret-at-least-32-chars"
+TOKEN_ENCRYPTION_KEY="base64-encoded-32-byte-key"
+MCP_API_KEY="replace-with-a-long-random-mcp-token"
+MCP_OWNER_EMAIL="your-google-email@gmail.com"

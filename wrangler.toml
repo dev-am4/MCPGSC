@@ -1,0 +1,13 @@
+name = "mcpgsc"
+main = "src/index.ts"
+compatibility_date = "2026-10-15"
+workers_dev = true
+
+# 02:00 UTC = 09:00 Asia/Bangkok
+[triggers]
+crons = ["0 2 * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "mcpgsc"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"

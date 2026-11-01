@@ -1,0 +1,198 @@
+import type { Env } from './types';
+import { HttpError } from './types';
+import { allowedEmail, cookie, createSession, encryptToken, randomState, readSession, validateConfig, constantEqual } from './security';
+import { detailRows, getAccessToken, getAccount, inspection, listSites, overview } from './google';
+import { handleMcp } from './mcp';
+import { HTML } from './ui';
+
+const json = (payload: unknown, status = 200) => new Response(JSON.stringify(payload), {
+  status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'private, no-store',
+    'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' }
+});
+
+function guardOrigin(req: Request, env: Env): void {
+  const origin = req.headers.get('Origin');
+  if (origin && origin !== new URL(env.APP_URL).origin) throw new HttpError(403, 'Cross-origin requests are not permitted');
+}
+
+function appUrl(env: Env): string { return env.APP_URL.replace(/\/+$/, ''); }
+function loginUrl(env: Env): string {
+  const u = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+  u.searchParams.set('client_id', env.GOOGLE_CLIENT_ID);
+  u.searchParams.set('redirect_uri', appUrl(env) + '/auth/callback');
+  u.searchParams.set('response_type', 'code');
+  u.searchParams.set('scope', 'openid email https://www.googleapis.com/auth/webmasters.readonly');
+  u.searchParams.set('access_type', 'offline');
+  u.searchParams.set('prompt', 'consent');
+  return u.toString();
+}
+
+async function callback(req: Request, env: Env): Promise<Response> {
+  const url = new URL(req.url);
+  const state = url.searchParams.get('state') || '';
+  const code = url.searchParams.get('code');
+  const saved = req.headers.get('Cookie')?.split(';').map(s => s.trim()).find(s => s.startsWith('mcpgsc_oauth='));
+  const expected = saved ? decodeURIComponent(saved.slice('mcpgsc_oauth='.length)) : '';
+  if (!code || !state || !expected || !constantEqual(state, expected))
+    throw new HttpError(400, 'Google login verification failed. Please restart the login.');
+  const form = new URLSearchParams({
+    client_id: env.GOOGLE_CLIENT_ID,
+    client_secret: env.GOOGLE_CLIENT_SECRET,
+    redirect_uri: appUrl(env) + '/auth/callback',
+    code, grant_type: 'authorization_code'
+  });
+  const exchange = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', body: form });
+  const token = await exchange.json() as { access_token?: string; refresh_token?: string; error?: string };
+  if (!exchange.ok || !token.access_token)
+    throw new HttpError(502, 'Google OAuth exchange failed: ' + (token.error || exchange.status));
+
+  const profileRes = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
+    headers: { Authorization: 'Bearer ' + token.access_token }
+  });
+  const profile = await profileRes.json() as { email?: string; email_verified?: boolean; sub?: string };
+  if (!profileRes.ok || !profile.email_verified || !profile.email || !profile.sub || !allowedEmail(profile.email, env))
+    throw new HttpError(403, 'This Google account is not in ALLOWED_EMAILS');
+
+  const existing = await env.DB.prepare('SELECT google_sub, refresh_cipher FROM accounts WHERE email=?')
+    .bind(profile.email).first<{ google_sub: string; refresh_cipher: string }>();
+  const refresh = token.refresh_token
+    ? await encryptToken(token.refresh_token, env)
+    : (existing && existing.google_sub === profile.sub ? existing.refresh_cipher : '');
+  if (!refresh) throw new HttpError(400, 'Google did not provide an offline refresh token. Revoke the app in Google permissions and reconnect.');
+  await env.DB.prepare('INSERT INTO accounts (email,google_sub,refresh_cipher,updated_at) VALUES (?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(email) DO UPDATE SET google_sub=excluded.google_sub,refresh_cipher=excluded.refresh_cipher,updated_at=CURRENT_TIMESTAMP')
+    .bind(profile.email, profile.sub, refresh).run();
+
+  const response = new Response(null, { status: 302, headers: { Location: appUrl(env) + '/' } });
+  response.headers.append('Set-Cookie', cookie('mcpgsc_oauth', '', req, 0));
+  response.headers.append('Set-Cookie', cookie('mcpgsc_session', await createSession(profile.email, env), req, 30 * 86400));
+  response.headers.set('Cache-Control', 'no-store');
+  return response;
+}
+
+async function authUser(req: Request, env: Env): Promise<string> {
+  const email = await readSession(req, env);
+  if (!email) throw new HttpError(401, 'Please connect your Google account first');
+  await getAccount(env, email);
+  return email;
+}
+
+async function handleApi(req: Request, env: Env, url: URL): Promise<Response> {
+  const path = url.pathname;
+  const method = req.method;
+  if (path === '/api/me' && method === 'GET') {
+    const email = await readSession(req, env);
+    if (!email) return json({ authenticated: false });
+    const account = await env.DB.prepare('SELECT email FROM accounts WHERE email=?').bind(email).first();
+    return account ? json({ authenticated: true, email }) : json({ authenticated: false });
+  }
+  const email = await authUser(req, env);
+  if (path === '/api/sites' && method === 'GET') {
+    const token = await getAccessToken(env, email);
+    return json(await listSites(env, email, token));
+  }
+  if (path === '/api/overview' && method === 'GET') {
+    const days = getDays(url.searchParams.get('days'));
+    const token = await getAccessToken(env, email);
+    return json(await overview(env, email, token, days));
+  }
+  if (path === '/api/details' && method === 'GET') {
+    const dimension = url.searchParams.get('dimension');
+    if (dimension !== 'query' && dimension !== 'page') throw new HttpError(400, 'dimension must be query or page');
+    const property = url.searchParams.get('property') || '';
+    if (!property) throw new HttpError(400, 'property is required');
+    const token = await getAccessToken(env, email);
+    return json(await detailRows(env, email, token, property, dimension, getDays(url.searchParams.get('days'))));
+  }
+  if (path === '/api/inspect' && method === 'POST') {
+    guardOrigin(req, env);
+    const body = await req.json() as { property?: unknown; url?: unknown };
+    if (typeof body?.property !== 'string' || typeof body?.url !== 'string') throw new HttpError(400, 'property and url are required');
+    const token = await getAccessToken(env, email);
+    return json(await inspection(env, email, token, body.property, body.url));
+  }
+  if (path === '/api/refresh' && method === 'POST') {
+    guardOrigin(req, env);
+    await env.DB.prepare('DELETE FROM cache WHERE cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ?')
+      .bind('sites:' + email, 'metrics:' + email + ':%', 'detail:' + email + ':%').run();
+    const token = await getAccessToken(env, email);
+    return json({ sites: await listSites(env, email, token, true) });
+  }
+  if (path === '/api/disconnect' && method === 'POST') {
+    guardOrigin(req, env);
+    await env.DB.prepare('DELETE FROM accounts WHERE email=?').bind(email).run();
+    await env.DB.prepare('DELETE FROM cache WHERE cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ?')
+      .bind('sites:' + email, 'metrics:' + email + ':%', 'detail:' + email + ':%').run();
+    const response = json({ disconnected: true });
+    response.headers.append('Set-Cookie', cookie('mcpgsc_session', '', req, 0));
+    return response;
+  }
+  throw new HttpError(404, 'API route not found');
+}
+
+function getDays(input: string | null): number {
+  const n = Number(input || 28);
+  if (![7, 28, 90].includes(n)) throw new HttpError(400, 'days must be 7, 28, or 90');
+  return n;
+}
+
+async function appFetch(req: Request, env: Env): Promise<Response> {
+  const url = new URL(req.url);
+  if (url.pathname === '/health' && req.method === 'GET') return json({ status: 'ok', service: 'mcpgsc' });
+  if (url.pathname === '/mcp') return handleMcp(req, env);
+  if (url.pathname === '/' && req.method === 'GET') return new Response(HTML, { headers: {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-cache',
+    'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+    'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff'
+  } });
+  validateConfig(env);
+  if (url.pathname === '/auth/google' && req.method === 'GET') {
+    const state = randomState();
+    const redirect = new URL(loginUrl(env));
+    redirect.searchParams.set('state', state);
+    const response = new Response(null, { status: 302, headers: { Location: redirect.toString() } });
+    response.headers.append('Set-Cookie', cookie('mcpgsc_oauth', state, req, 600));
+    response.headers.set('Cache-Control', 'no-store');
+    return response;
+  }
+  if (url.pathname === '/auth/callback' && req.method === 'GET') return callback(req, env);
+  if (url.pathname === '/auth/logout' && req.method === 'POST') {
+    guardOrigin(req, env);
+    const response = json({ ok: true });
+    response.headers.append('Set-Cookie', cookie('mcpgsc_session', '', req, 0));
+    return response;
+  }
+  if (url.pathname.startsWith('/api/')) return handleApi(req, env, url);
+  return json({ error: 'Not found' }, 404);
+}
+
+async function warmCache(env: Env): Promise<void> {
+  validateConfig(env);
+  const result = await env.DB.prepare('SELECT email FROM accounts').all<{ email: string }>();
+  for (const account of result.results) {
+    try {
+      const token = await getAccessToken(env, account.email);
+      await listSites(env, account.email, token, true);
+      await overview(env, account.email, token, 7);
+      await overview(env, account.email, token, 28);
+    } catch (error) {
+      console.error('Scheduled GSC refresh failed:', error instanceof Error ? error.message : 'Unknown error');
+    }
+  }
+  await env.DB.prepare('DELETE FROM cache WHERE expires_at < ?').bind(Date.now() - 7 * 86400000).run();
+}
+
+export default {
+  async fetch(req: Request, env: Env): Promise<Response> {
+    try { return await appFetch(req, env); }
+    catch (error) {
+      const status = error instanceof HttpError ? error.status : 500;
+      const message = error instanceof HttpError ? error.message : 'Unexpected server error';
+      console.error('MCPGSC request:', status, message);
+      return json({ error: message }, status);
+    }
+  },
+  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(warmCache(env));
+  }
+} satisfies ExportedHandler<Env>;
