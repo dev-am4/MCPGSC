@@ -1,6 +1,8 @@
 import type { Env } from './types';
 import { HttpError } from './types';
-import { constantEqual } from './security';
+import { constantEqual, allowedEmail } from './security';
+import { oauthEmail } from './oauth-tokens';
+import { authChallenge, authScope } from './oauth-register';
 import { detailRows, getAccessToken, inspection, listSites, overview } from './google';
 
 type Rpc = { jsonrpc?: string; id?: number | string | null; method?: string; params?: Record<string, unknown> };
@@ -45,15 +47,21 @@ function rpcError(id: Rpc['id'], code: number, message: string, status = 200): R
 }
 
 export async function handleMcp(req: Request, env: Env): Promise<Response> {
-  if (!env.MCP_API_KEY || env.MCP_API_KEY.length < 32)
-    return json({ error: 'MCP endpoint is not configured' }, 503);
-  const origin = req.headers.get('Origin');
-  if (origin && origin !== new URL(env.APP_URL).origin) return json({ error: 'Origin not allowed' }, 403);
   const bearer = req.headers.get('Authorization') || '';
-  if (!bearer.startsWith('Bearer ') || !constantEqual(bearer.slice(7), env.MCP_API_KEY))
-    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: {
-      'Content-Type': 'application/json', 'WWW-Authenticate': 'Bearer realm="MCPGSC"'
-    } });
+  // OAuth access tokens are bound to an authorized Google account. Retain the
+  // legacy service API key for existing integrations without exposing it.
+  let email = await oauthEmail(req, env);
+  if (!email && env.MCP_API_KEY && env.MCP_API_KEY.length >= 32 &&
+      bearer.startsWith('Bearer ') && constantEqual(bearer.slice(7), env.MCP_API_KEY)) {
+    const owner = (env.MCP_OWNER_EMAIL || env.ALLOWED_EMAILS.split(',')[0] || '').trim();
+    if (allowedEmail(owner, env)) email = owner;
+  }
+  if (!email) return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+    status: 401, headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store', 'WWW-Authenticate': authChallenge(env)
+    }
+  });
   if (req.method !== 'POST') return new Response(null, { status: 405, headers: { Allow: 'POST' } });
   let rpc: Rpc;
   try { rpc = await req.json() as Rpc; }
@@ -66,14 +74,12 @@ export async function handleMcp(req: Request, env: Env): Promise<Response> {
     capabilities: { tools: { listChanged: false } },
     serverInfo: { name: 'mcpgsc', version: '0.1.0' }
   });
-  if (rpc.method === 'tools/list') return reply(rpc.id, { tools: TOOLS });
+  if (rpc.method === 'tools/list') return reply(rpc.id, { tools: TOOLS.map(t => ({ ...t, securitySchemes: [{ type: 'oauth2', scopes: [authScope] }] })) });
   if (rpc.method !== 'tools/call') return rpcError(rpc.id, -32601, 'Method not found', 404);
   const name = rpc.params?.name;
   if (typeof name !== 'string' || !TOOLS.some(t => t.name === name)) return rpcError(rpc.id, -32602, 'Unknown tool');
   const args = (rpc.params?.arguments && typeof rpc.params.arguments === 'object') ? rpc.params.arguments as Record<string, unknown> : {};
   try {
-    const email = env.MCP_OWNER_EMAIL || (env.ALLOWED_EMAILS || '').split(',')[0]?.trim();
-    if (!email) throw new HttpError(503, 'MCP owner email is not configured');
     const token = await getAccessToken(env, email);
     const input = properties(args);
     let result: unknown;

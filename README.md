@@ -78,18 +78,44 @@ Copy the genuine UUID for `mcpgsc` into the `[[d1_databases]]` block as `databas
 
 Optional: The repository also contains `schema.sql` for manual database administration. D1 CLI `--remote` may require a real `database_id` in TOML even when the deploy created it automatically. Use the Cloudflare dashboard or a temporary config with the correct ID for remote administration.
 
-## MCP
+## MCP with ChatGPT OAuth 2.1
 
-Endpoint: `https://YOUR-HOST/mcp`
+Remote endpoint: `https://YOUR-HOST/mcp`
 
-Supply `Authorization: Bearer YOUR_MCP_API_KEY`. Stateless Streamable HTTP JSON-RPC protocol `2025-06-18` offers:
+MCPGSC supports OAuth 2.1 authorization-code + PKCE (S256) and dynamic client registration (DCR). No shared static API key is needed by ChatGPT.
+
+Discovery:
+- `GET /.well-known/oauth-protected-resource`
+- `GET /.well-known/oauth-authorization-server`
+
+OAuth routes:
+- `POST /oauth/register` (ChatGPT callback URIs only)
+- `GET /oauth/authorize` (signed same-site consent, reusing connected Google account)
+- `POST /oauth/approve`
+- `POST /oauth/token` (code exchange and refresh rotation)
+
+Each access token is random, hashed at rest, limited to `gsc:read`, bound to the exact MCP resource and account, and expires after one hour. Refresh tokens expire after 30 days and rotate on use. Authentication codes expire after five minutes and are single-use. Expired OAuth records are purged during the daily Cron.
+
+The MCP endpoint keeps **legacy `MCP_API_KEY` support** for existing private clients, but the ChatGPT plugin must use OAuth:
+```json
+{
+  "auth": {
+    "type": "oauth",
+    "client": {"mode": "dcr"},
+    "baseScopes": ["gsc:read"]
+  }
+}
+```
+For ChatGPT, reconnect the plugin after deploying this code and updating the plugin manifest. Sign in with the same Google account previously linked to the dashboard, then approve read-only access on the MCPGSC consent screen.
+
+**Note:** DCR only accepts OpenAI ChatGPT's stable connector redirect and scoped callback-specific connector redirect URIs. Google OAuth redirect URIs remain unchanged (`/auth/callback`). No secret credentials are included in the plugin package.
+
+Existing read-only MCP tools:
 - `list_sites`
 - `get_overview`
 - `get_queries`
 - `get_pages`
 - `inspect_url`
-
-Some ChatGPT custom MCP connections require a full OAuth authorization flow instead of a static bearer header; that extra flow is **not implemented** in this version. Avoid putting secrets in URLs.
 
 ## Notes
 

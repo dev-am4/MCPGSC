@@ -7,6 +7,9 @@ import { HTML } from './ui';
 import { LOGO_SVG, FAVICON_SVG } from './brand';
 import { diagnostics } from './diagnostics';
 import { ensureSchema } from './bootstrap';
+import { authDiscovery, registerClient } from './oauth-register';
+import { authorize, approve } from './oauth-approval';
+import { exchangeToken, cleanOAuth } from './oauth-tokens';
 
 const json = (payload: unknown, status = 200) => new Response(JSON.stringify(payload), {
   status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'private, no-store',
@@ -65,8 +68,18 @@ async function callback(req: Request, env: Env): Promise<Response> {
   await env.DB.prepare('INSERT INTO accounts (email,google_sub,refresh_cipher,updated_at) VALUES (?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(email) DO UPDATE SET google_sub=excluded.google_sub,refresh_cipher=excluded.refresh_cipher,updated_at=CURRENT_TIMESTAMP')
     .bind(profile.email, profile.sub, refresh).run();
 
-  const response = new Response(null, { status: 302, headers: { Location: appUrl(env) + '/' } });
+  const nextCookie = req.headers.get('Cookie')?.split(';').map(s=>s.trim())
+    .find(s=>s.startsWith('mcpgsc_oauth_next='));
+  let next = '/';
+  if (nextCookie) {
+    try {
+      const stored = decodeURIComponent(nextCookie.slice('mcpgsc_oauth_next='.length));
+      if (stored.startsWith('/oauth/authorize?') && stored.length < 3800) next = stored;
+    } catch { /* discard invalid resume path */ }
+  }
+  const response = new Response(null, { status: 302, headers: { Location: appUrl(env) + next } });
   response.headers.append('Set-Cookie', cookie('mcpgsc_oauth', '', req, 0));
+  response.headers.append('Set-Cookie', cookie('mcpgsc_oauth_next', '', req, 0));
   response.headers.append('Set-Cookie', cookie('mcpgsc_session', await createSession(profile.email, env), req, 30 * 86400));
   response.headers.set('Cache-Control', 'no-store');
   return response;
@@ -165,6 +178,16 @@ async function appFetch(req: Request, env: Env): Promise<Response> {
   } });
   validateConfig(env);
   await ensureSchema(env);
+  if (req.method === 'GET' && (
+      url.pathname === '/.well-known/oauth-protected-resource' ||
+      url.pathname === '/.well-known/oauth-protected-resource/mcp'))
+    return authDiscovery(env, true);
+  if (req.method === 'GET' && url.pathname === '/.well-known/oauth-authorization-server')
+    return authDiscovery(env, false);
+  if (url.pathname === '/oauth/register') return registerClient(req, env);
+  if (req.method === 'GET' && url.pathname === '/oauth/authorize') return authorize(req, env);
+  if (req.method === 'POST' && url.pathname === '/oauth/approve') return approve(req, env);
+  if (req.method === 'POST' && url.pathname === '/oauth/token') return exchangeToken(req, env);
   if (url.pathname === '/auth/google' && req.method === 'GET') {
     const state = randomState();
     const redirect = new URL(loginUrl(env));
@@ -188,6 +211,7 @@ async function appFetch(req: Request, env: Env): Promise<Response> {
 async function warmCache(env: Env): Promise<void> {
   validateConfig(env);
   await ensureSchema(env);
+  await cleanOAuth(env);
   const result = await env.DB.prepare('SELECT email FROM accounts').all<{ email: string }>();
   for (const account of result.results) {
     try {
