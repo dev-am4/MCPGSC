@@ -173,7 +173,7 @@ async function appFetch(req: Request, env: Env): Promise<Response> {
   }
   if (req.method === 'GET' && (url.pathname === '/logo.svg' || url.pathname === '/favicon.svg' || url.pathname === '/favicon.ico')) {
     const file = url.pathname === '/logo.svg' ? '/generated-logo.png' : '/generated-favicon.png';
-    return Response.redirect(new URL(file + '?brand=original1', url.origin).toString(), 302);
+    return Response.redirect(new URL(file + '?brand=global2', url.origin).toString(), 302);
   }
   if (url.pathname === '/health' && req.method === 'GET') return json({ status: 'ok', service: 'mcpgsc' });
   if (url.pathname === '/mcp') {
