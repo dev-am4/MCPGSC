@@ -126,3 +126,10 @@ Existing read-only MCP tools:
 - Avoid disabling Wrangler's auto-provisioning flag (`--no-x-provision`) unless you have bound a real D1 ID manually.
 
 Documentation: [Cloudflare automatic provisioning](https://developers.cloudflare.com/changelog/post/2025-10-24-automatic-resource-provisioning/) · [Google Search Console API](https://developers.google.com/webmaster-tools/v1/api_reference_index)
+
+## Branding and build fix (2026-11-01)
+
+- The static Worker `/logo.svg` and `/favicon.svg` routes serve the matching dark/mint MCPGSC brand icon and wordmark.
+- The browser uses `?v=3` to refresh the header and tab icons after deployment.
+- The TypeScript MCP module imports `authScope` from `src/oauth-utils.ts` (its actual exported source), resolving Wrangler/esbuild's `No matching export` build failure.
+- Deploy using `npx wrangler deploy`; confirm the Worker OAuth discovery endpoint and Google/MCP diagnostics after deploying.

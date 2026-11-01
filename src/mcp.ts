@@ -2,7 +2,8 @@ import type { Env } from './types';
 import { HttpError } from './types';
 import { constantEqual, allowedEmail } from './security';
 import { oauthEmail } from './oauth-tokens';
-import { authChallenge, authScope } from './oauth-register';
+import { authChallenge } from './oauth-register';
+import { authScope } from './oauth-utils';
 import { detailRows, getAccessToken, inspection, listSites, overview } from './google';
 
 type Rpc = { jsonrpc?: string; id?: number | string | null; method?: string; params?: Record<string, unknown> };
