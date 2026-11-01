@@ -10,6 +10,15 @@ Minimal dark Google Search Console dashboard and read-only MCP server. Built for
 - Refresh tokens encrypted with AES-GCM and stored in D1. Short-lived cached analytics.
 - Daily cache refresh at 09:00 Bangkok.
 
+## Brand assets and System Diagnostics
+
+- Logo: [assets/logo.svg](assets/logo.svg), transparent vector wordmark.
+- Favicon: [assets/favicon.svg](assets/favicon.svg), square charcoal vector symbol.
+- The Worker serves the same assets at `/logo.svg` and `/favicon.svg` for the desktop sidebar, mobile header, and browser tabs.
+- After signing in, open **สถานะระบบ** (System Diagnostics) in the sidebar. It checks D1 database connectivity, Google refresh-token OAuth, Search Console properties, Search Analytics and the internal MCP JSON-RPC handshake without exposing credentials.
+- `GET /api/diagnostics` requires a dashboard login and returns per-service `ok`, `warning`, or `error` results. The MCP check validates internal readiness, **not** connectivity from an external ChatGPT client.
+- Metrics with zero impressions display average position as `—` rather than misleading `0.0`.
+
 ## Deploy from GitHub / Cloudflare Workers Builds
 
 **Deploy command: `npx wrangler deploy`**. No custom build command is required.

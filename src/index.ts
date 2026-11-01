@@ -4,6 +4,8 @@ import { allowedEmail, cookie, createSession, encryptToken, randomState, readSes
 import { detailRows, getAccessToken, getAccount, inspection, listSites, overview } from './google';
 import { handleMcp } from './mcp';
 import { HTML } from './ui';
+import { LOGO_SVG, FAVICON_SVG } from './brand';
+import { diagnostics } from './diagnostics';
 import { ensureSchema } from './bootstrap';
 
 const json = (payload: unknown, status = 200) => new Response(JSON.stringify(payload), {
@@ -87,6 +89,9 @@ async function handleApi(req: Request, env: Env, url: URL): Promise<Response> {
     return account ? json({ authenticated: true, email }) : json({ authenticated: false });
   }
   const email = await authUser(req, env);
+  if (path === '/api/diagnostics' && method === 'GET') {
+    return json(await diagnostics(env, email));
+  }
   if (path === '/api/sites' && method === 'GET') {
     const token = await getAccessToken(env, email);
     return json(await listSites(env, email, token));
@@ -138,6 +143,15 @@ function getDays(input: string | null): number {
 
 async function appFetch(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
+  if (req.method === 'GET' && (url.pathname === '/logo.svg' || url.pathname === '/favicon.svg')) {
+    return new Response(url.pathname === '/logo.svg' ? LOGO_SVG : FAVICON_SVG, {
+      headers: { 'Content-Type': 'image/svg+xml; charset=utf-8',
+        'Cache-Control': 'public, max-age=3600', 'X-Content-Type-Options': 'nosniff' }
+    });
+  }
+  if (url.pathname === '/favicon.ico' && req.method === 'GET') {
+    return Response.redirect(new URL('/favicon.svg', url.origin).toString(), 302);
+  }
   if (url.pathname === '/health' && req.method === 'GET') return json({ status: 'ok', service: 'mcpgsc' });
   if (url.pathname === '/mcp') {
     await ensureSchema(env);
