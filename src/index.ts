@@ -21,9 +21,15 @@ function guardOrigin(req: Request, env: Env): void {
 }
 
 function appUrl(env: Env): string { return env.APP_URL.replace(/\/+$/, ''); }
+function googleClientId(env: Env): string {
+  const raw = String(env.GOOGLE_CLIENT_ID || '').trim();
+  const match = raw.match(/[0-9]+-[A-Za-z0-9._-]+\.apps\.googleusercontent\.com/);
+  if (!match) throw new Error('GOOGLE_CLIENT_ID is invalid');
+  return match[0];
+}
 function loginUrl(env: Env): string {
   const u = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-  u.searchParams.set('client_id', env.GOOGLE_CLIENT_ID);
+  u.searchParams.set('client_id', googleClientId(env));
   u.searchParams.set('redirect_uri', appUrl(env) + '/auth/callback');
   u.searchParams.set('response_type', 'code');
   u.searchParams.set('scope', 'openid email https://www.googleapis.com/auth/webmasters.readonly');
@@ -41,7 +47,7 @@ async function callback(req: Request, env: Env): Promise<Response> {
   if (!code || !state || !expected || !constantEqual(state, expected))
     throw new HttpError(400, 'Google login verification failed. Please restart the login.');
   const form = new URLSearchParams({
-    client_id: env.GOOGLE_CLIENT_ID,
+    client_id: googleClientId(env),
     client_secret: env.GOOGLE_CLIENT_SECRET,
     redirect_uri: appUrl(env) + '/auth/callback',
     code, grant_type: 'authorization_code'
