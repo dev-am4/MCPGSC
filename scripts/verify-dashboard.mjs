@@ -18,7 +18,7 @@ for(const required of [
   'class="metrics"',
   'class="chart"',
   'class="surface-list"',
-  '/generated-favicon.png?brand=global2'
+  '/generated-favicon.png?brand=global3'
 ]) assert(html.includes(required),'missing clean dashboard element: '+required);
 
 for(const removed of ['TRAFFIC SHARE','PERIOD COMPARISON','wow-metrics','overview-main','metric-spark'])
