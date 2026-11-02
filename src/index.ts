@@ -237,6 +237,7 @@ async function warmCache(env: Env): Promise<void> {
       await listSites(env, account.email, token, true);
       await overview(env, account.email, token, 7);
       await overview(env, account.email, token, 28);
+      await strategyOverview(env, account.email, token, 28);
     } catch (error) {
       console.error('Scheduled GSC refresh failed:', error instanceof Error ? error.message : 'Unknown error');
     }
