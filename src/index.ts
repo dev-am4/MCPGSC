@@ -128,6 +128,7 @@ async function handleApi(req: Request, env: Env, url: URL): Promise<Response> {
   }
   if (path === '/api/strategy' && method === 'GET') {
     const days = getDays(url.searchParams.get('days'));
+    const token = await getAccessToken(env, email);
     return json(await strategyOverview(env, email, token, days));
   }
 
@@ -148,8 +149,8 @@ async function handleApi(req: Request, env: Env, url: URL): Promise<Response> {
   }
   if (path === '/api/refresh' && method === 'POST') {
     guardOrigin(req, env);
-    await env.DB.prepare('DELETE FROM cache WHERE cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ?')
-      .bind('sites:' + email, 'metrics:' + email + ':%', 'detail:' + email + ':%').run();
+    await env.DB.prepare('DELETE FROM cache WHERE cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ?')
+      .bind('sites:' + email, 'metrics:' + email + ':%', 'detail:' + email + ':%', 'strategy-v1:' + email + ':%').run();
     const token = await getAccessToken(env, email);
     return json({ sites: await listSites(env, email, token, true) });
   }
