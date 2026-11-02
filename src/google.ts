@@ -292,6 +292,7 @@ export async function strategyOverview(env: Env, email: string, token: string, d
           return {
             current: currentTotal, previous: previousTotal, status: strategyStatus(currentTotal, previousTotal),
             opportunities, lowCtr, losses, winners, pageLosses, pageOpportunities,
+            topQueries: queries.filter(x => x.impressions >= 5).sort((a, b) => b.impressions - a.impressions).slice(0, 60),
             actions: actions.sort((a, b) => b.priority - a.priority).slice(0, 4),
             sampledRows: currentRows.length, previousSampledRows: previousRows.length
           };
@@ -312,11 +313,37 @@ export async function strategyOverview(env: Env, email: string, token: string, d
   const statusCount = { grow: 0, recover: 0, watch: 0, new: 0 };
   for (const x of successful) statusCount[x.status as keyof typeof statusCount]++;
 
+  const overlapMap = new Map<string, Array<{ site: Site; clicks: number; impressions: number; position: number }>>();
+  for (const x of successful) for (const q of (x.topQueries || []) as StrategyMetric[]) {
+    const normalized = q.key.trim().toLocaleLowerCase();
+    if (!normalized || q.impressions < 5) continue;
+    if (!overlapMap.has(normalized)) overlapMap.set(normalized, []);
+    overlapMap.get(normalized)!.push({ site: x.site, clicks: q.clicks, impressions: q.impressions, position: q.position });
+  }
+  const overlaps = [...overlapMap.entries()]
+    .filter(([, entries]) => new Set(entries.map(x => x.site.id)).size >= 2)
+    .map(([query, entries]) => ({
+      query,
+      sites: entries.sort((a, b) => b.impressions - a.impressions),
+      impressions: entries.reduce((n, x) => n + x.impressions, 0),
+      clicks: entries.reduce((n, x) => n + x.clicks, 0),
+      competingTop20: entries.filter(x => x.position > 0 && x.position <= 20).length
+    }))
+    .sort((a, b) => (b.competingTop20 - a.competingTop20) || (b.impressions - a.impressions))
+    .slice(0, 12);
+
+  const portfolioClicks = successful.reduce((n, x) => n + (x.current?.clicks || 0), 0);
+  const concentration = successful.map(x => ({ site: x.site, clicks: x.current?.clicks || 0 }))
+    .sort((a, b) => b.clicks - a.clicks)[0];
+  const concentrationShare = portfolioClicks && concentration ? concentration.clicks / portfolioClicks : 0;
+
   return {
     days,
     period: { start: r.start, end: r.end, previousStart: r.previousStart, previousEnd },
     sites: results,
     portfolioActions,
+    overlaps,
+    concentration: concentration ? { ...concentration, share: concentrationShare } : null,
     statusCount,
     connected: sites.length,
     successful: successful.length,
