@@ -1,7 +1,7 @@
 import type { Env } from './types';
 import { HttpError } from './types';
 import { allowedEmail, cookie, createSession, encryptToken, randomState, readSession, validateConfig, constantEqual } from './security';
-import { detailRows, getAccessToken, getAccount, inspection, listSites, overview } from './google';
+import { detailRows, getAccessToken, getAccount, inspection, listSites, overview, strategyOverview } from './google';
 import { handleMcp } from './mcp';
 import { HTML } from './ui';
 import { diagnostics } from './diagnostics';
@@ -126,6 +126,11 @@ async function handleApi(req: Request, env: Env, url: URL): Promise<Response> {
     const token = await getAccessToken(env, email);
     return json(await overview(env, email, token, days));
   }
+  if (path === '/api/strategy' && method === 'GET') {
+    const days = getDays(url.searchParams.get('days'));
+    return json(await strategyOverview(env, email, token, days));
+  }
+
   if (path === '/api/details' && method === 'GET') {
     const dimension = url.searchParams.get('dimension');
     if (dimension !== 'query' && dimension !== 'page') throw new HttpError(400, 'dimension must be query or page');
