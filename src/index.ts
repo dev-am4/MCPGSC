@@ -157,8 +157,8 @@ async function handleApi(req: Request, env: Env, url: URL): Promise<Response> {
   if (path === '/api/disconnect' && method === 'POST') {
     guardOrigin(req, env);
     await env.DB.prepare('DELETE FROM accounts WHERE email=?').bind(email).run();
-    await env.DB.prepare('DELETE FROM cache WHERE cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ?')
-      .bind('sites:' + email, 'metrics:' + email + ':%', 'detail:' + email + ':%').run();
+    await env.DB.prepare('DELETE FROM cache WHERE cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ?')
+      .bind('sites:' + email, 'metrics:' + email + ':%', 'detail:' + email + ':%', 'strategy-v1:' + email + ':%').run();
     const response = json({ disconnected: true });
     response.headers.append('Set-Cookie', cookie('mcpgsc_session', '', req, 0));
     return response;
