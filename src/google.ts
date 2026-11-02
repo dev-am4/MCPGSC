@@ -196,6 +196,136 @@ export async function detailRows(env: Env, email: string, token: string, propert
     () => analytics(token, property, { startDate: r.start, endDate: r.end, dimensions: [dimension], rowLimit: 250 }));
 }
 
+
+type StrategyMetric = Totals & { key: string; deltaClicks: number; deltaImpressions: number; previousClicks: number; previousImpressions: number; previousCtr: number; previousPosition: number; score: number; missedClicks: number };
+
+function aggregateStrategy(rows: SearchRow[], keyIndex: number): Map<string, Totals> {
+  const grouped = new Map<string, SearchRow[]>();
+  for (const row of rows) {
+    const key = String(row.keys?.[keyIndex] || '').trim();
+    if (!key) continue;
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key)!.push(row);
+  }
+  return new Map([...grouped.entries()].map(([key, values]) => [key, totals(values)]));
+}
+
+function expectedCtr(position: number): number {
+  if (position <= 1.5) return .28;
+  if (position <= 3) return .16;
+  if (position <= 5) return .09;
+  if (position <= 10) return .055;
+  if (position <= 20) return .025;
+  return .012;
+}
+
+function strategyRows(current: Map<string, Totals>, previous: Map<string, Totals>): StrategyMetric[] {
+  const keys = new Set([...current.keys(), ...previous.keys()]);
+  const rows: StrategyMetric[] = [];
+  for (const key of keys) {
+    const now = current.get(key) || { clicks: 0, impressions: 0, ctr: 0, position: 0 };
+    const before = previous.get(key) || { clicks: 0, impressions: 0, ctr: 0, position: 0 };
+    const expected = expectedCtr(now.position || 100);
+    const missedClicks = Math.max(0, Math.round(now.impressions * Math.max(0, expected - now.ctr)));
+    const positionOpportunity = now.position >= 4 && now.position <= 20 ? Math.max(0, 21 - now.position) : 0;
+    const score = Math.round(
+      Math.min(100,
+        Math.log10(now.impressions + 1) * 15 +
+        positionOpportunity * 2.2 +
+        Math.min(28, missedClicks * 1.4) +
+        (now.clicks < before.clicks ? Math.min(18, (before.clicks - now.clicks) * 1.8) : 0)
+      )
+    );
+    rows.push({
+      key, ...now, deltaClicks: now.clicks - before.clicks, deltaImpressions: now.impressions - before.impressions,
+      previousClicks: before.clicks, previousImpressions: before.impressions, previousCtr: before.ctr,
+      previousPosition: before.position, score, missedClicks
+    });
+  }
+  return rows;
+}
+
+function strategyStatus(current: Totals, previous: Totals): 'grow' | 'recover' | 'watch' | 'new' {
+  if (!previous.impressions && current.impressions) return 'new';
+  if (previous.clicks >= 5 && current.clicks < previous.clicks * .75) return 'recover';
+  if (current.clicks > previous.clicks * 1.15 && current.clicks > previous.clicks + 2) return 'grow';
+  return 'watch';
+}
+
+export async function strategyOverview(env: Env, email: string, token: string, days: number) {
+  const sites = await listSites(env, email, token);
+  const r = range(days);
+  const previousEnd = relativeDay(-days - 3);
+  const results: Array<Record<string, unknown>> = [];
+
+  for (let i = 0; i < sites.length; i += 3) {
+    const batch = await Promise.all(sites.slice(i, i + 3).map(async site => {
+      try {
+        const payload = await cached(env, ['strategy-v1', email, site.property, days, r.end].join(':'), CACHE_HOURS * 3600, async () => {
+          const [currentRows, previousRows] = await Promise.all([
+            analytics(token, site.property, { startDate: r.start, endDate: r.end, dimensions: ['query', 'page'], rowLimit: 1000 }),
+            analytics(token, site.property, { startDate: r.previousStart, endDate: previousEnd, dimensions: ['query', 'page'], rowLimit: 1000 })
+          ]);
+          const currentTotal = totals(currentRows);
+          const previousTotal = totals(previousRows);
+          const queries = strategyRows(aggregateStrategy(currentRows, 0), aggregateStrategy(previousRows, 0));
+          const pages = strategyRows(aggregateStrategy(currentRows, 1), aggregateStrategy(previousRows, 1));
+          const opportunity = (x: StrategyMetric) => x.impressions >= 20 && x.position >= 4 && x.position <= 20;
+          const ctrGap = (x: StrategyMetric) => x.impressions >= 80 && x.position > 0 && x.position <= 12 && x.missedClicks >= 2;
+          const loss = (x: StrategyMetric) => x.previousClicks >= 3 && x.deltaClicks <= -2;
+          const gain = (x: StrategyMetric) => x.clicks >= 2 && x.deltaClicks >= 2;
+
+          const opportunities = queries.filter(opportunity).sort((a, b) => b.score - a.score).slice(0, 8);
+          const lowCtr = queries.filter(ctrGap).sort((a, b) => b.missedClicks - a.missedClicks).slice(0, 6);
+          const losses = queries.filter(loss).sort((a, b) => a.deltaClicks - b.deltaClicks).slice(0, 6);
+          const winners = queries.filter(gain).sort((a, b) => b.deltaClicks - a.deltaClicks).slice(0, 6);
+          const pageLosses = pages.filter(loss).sort((a, b) => a.deltaClicks - b.deltaClicks).slice(0, 6);
+          const pageOpportunities = pages.filter(opportunity).sort((a, b) => b.score - a.score).slice(0, 6);
+
+          const actions: Array<{ type: string; priority: number; title: string; detail: string; impact: number }> = [];
+          if (!currentTotal.impressions) actions.push({ type: 'indexing', priority: 100, title: 'ตรวจการมองเห็นบน Google', detail: 'ช่วงนี้ไม่มี Impressions จากข้อมูล Search Console', impact: 100 });
+          if (losses.length) actions.push({ type: 'recover', priority: 95, title: 'กู้คืนคำค้นหาที่เสีย Clicks', detail: losses[0].key, impact: Math.abs(losses.reduce((n, x) => n + Math.min(0, x.deltaClicks), 0)) });
+          if (opportunities.length) actions.push({ type: 'rank', priority: 88, title: 'ดันคำใกล้หน้าแรก', detail: opportunities[0].key, impact: opportunities.reduce((n, x) => n + x.impressions, 0) });
+          if (lowCtr.length) actions.push({ type: 'ctr', priority: 82, title: 'เพิ่ม CTR จากผลค้นหา', detail: lowCtr[0].key, impact: lowCtr.reduce((n, x) => n + x.missedClicks, 0) });
+          if (pageLosses.length) actions.push({ type: 'page', priority: 78, title: 'ตรวจ Landing Page ที่เสียทราฟฟิก', detail: pageLosses[0].key, impact: Math.abs(pageLosses.reduce((n, x) => n + Math.min(0, x.deltaClicks), 0)) });
+
+          return {
+            current: currentTotal, previous: previousTotal, status: strategyStatus(currentTotal, previousTotal),
+            opportunities, lowCtr, losses, winners, pageLosses, pageOpportunities,
+            actions: actions.sort((a, b) => b.priority - a.priority).slice(0, 4),
+            sampledRows: currentRows.length, previousSampledRows: previousRows.length
+          };
+        });
+        return { site, ...payload };
+      } catch (error) {
+        return { site, error: error instanceof Error ? error.message : 'Unable to analyze strategy' };
+      }
+    }));
+    results.push(...batch);
+  }
+
+  const successful = results.filter((x: any) => x.current && !x.error) as any[];
+  const portfolioActions = successful.flatMap((x: any) =>
+    (x.actions || []).map((a: any) => ({ ...a, site: x.site, status: x.status }))
+  ).sort((a: any, b: any) => b.priority - a.priority || b.impact - a.impact).slice(0, 16);
+
+  const statusCount = { grow: 0, recover: 0, watch: 0, new: 0 };
+  for (const x of successful) statusCount[x.status as keyof typeof statusCount]++;
+
+  return {
+    days,
+    period: { start: r.start, end: r.end, previousStart: r.previousStart, previousEnd },
+    sites: results,
+    portfolioActions,
+    statusCount,
+    connected: sites.length,
+    successful: successful.length,
+    partial: successful.length !== sites.length,
+    updatedAt: new Date().toISOString(),
+    methodology: 'GSC Search Analytics query+page dimensions, final web data; top 1000 rows per site and period'
+  };
+}
+
 export async function inspection(env: Env, email: string, token: string, property: string, inspectionUrl: string) {
   findSite(await listSites(env, email, token), property);
   const url = new URL(inspectionUrl);
