@@ -41,3 +41,6 @@ for(const path of ['/api/segments','/api/sitemaps'])assert(api.includes(path),'m
 assert(api.includes("segment-v1:")&&api.includes("sitemap-v1:"),'cache invalidation incomplete');
 assert(!merged.includes('DEMO_DATA'),'dashboard must not invent metrics');
 console.log('MCPGSC compact SEO console, GSC dimensions, sitemap health and CSV: OK');
+
+assert(google.includes("['metrics-v2', email, site.property"),'new chart payload must bypass stale metrics cache');
+assert(api.includes("'metrics-v2:' + email + ':%'"),'refresh must clear chart cache');

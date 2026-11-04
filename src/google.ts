@@ -162,7 +162,7 @@ export async function overview(env: Env, email: string, token: string, days: num
   for (let i = 0; i < sites.length; i += 4) {
     const batch = await Promise.all(sites.slice(i, i + 4).map(async site => {
       try {
-        const metrics = await cached(env, ['metrics', email, site.property, days, r.end].join(':'), CACHE_HOURS * 3600,
+        const metrics = await cached(env, ['metrics-v2', email, site.property, days, r.end].join(':'), CACHE_HOURS * 3600,
           async () => reduceMetrics(days, await analytics(token, site.property,
             { startDate: r.previousStart, endDate: r.end, dimensions: ['date'], rowLimit: 200 })));
         return { site, ...metrics };

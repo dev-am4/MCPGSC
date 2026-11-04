@@ -165,16 +165,16 @@ async function handleApi(req: Request, env: Env, url: URL): Promise<Response> {
   }
   if (path === '/api/refresh' && method === 'POST') {
     guardOrigin(req, env);
-    await env.DB.prepare('DELETE FROM cache WHERE cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ?')
-      .bind('sites:' + email, 'metrics:' + email + ':%', 'detail:' + email + ':%', 'strategy-v1:' + email + ':%', 'segment-v1:' + email + ':%', 'sitemap-v1:' + email + ':%').run();
+    await env.DB.prepare('DELETE FROM cache WHERE cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ?')
+      .bind('sites:' + email, 'metrics:' + email + ':%', 'metrics-v2:' + email + ':%', 'detail:' + email + ':%', 'strategy-v1:' + email + ':%', 'segment-v1:' + email + ':%', 'sitemap-v1:' + email + ':%').run();
     const token = await getAccessToken(env, email);
     return json({ sites: await listSites(env, email, token, true) });
   }
   if (path === '/api/disconnect' && method === 'POST') {
     guardOrigin(req, env);
     await env.DB.prepare('DELETE FROM accounts WHERE email=?').bind(email).run();
-    await env.DB.prepare('DELETE FROM cache WHERE cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ?')
-      .bind('sites:' + email, 'metrics:' + email + ':%', 'detail:' + email + ':%', 'strategy-v1:' + email + ':%', 'segment-v1:' + email + ':%', 'sitemap-v1:' + email + ':%').run();
+    await env.DB.prepare('DELETE FROM cache WHERE cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ?')
+      .bind('sites:' + email, 'metrics:' + email + ':%', 'metrics-v2:' + email + ':%', 'detail:' + email + ':%', 'strategy-v1:' + email + ':%', 'segment-v1:' + email + ':%', 'sitemap-v1:' + email + ':%').run();
     const response = json({ disconnected: true });
     response.headers.append('Set-Cookie', cookie('mcpgsc_session', '', req, 0));
     return response;
