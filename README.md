@@ -142,3 +142,11 @@ Cloudflare Workers serves both through the ASSETS binding. The sidebar places th
 - The browser uses `?v=3` to refresh the header and tab icons after deployment.
 - The TypeScript MCP module imports `authScope` from `src/oauth-utils.ts` (its actual exported source), resolving Wrangler/esbuild's `No matching export` build failure.
 - Deploy using `npx wrangler deploy`; confirm the Worker OAuth discovery endpoint and Google/MCP diagnostics after deploying.
+
+## Console v2 (2026-11-05)
+- Compact single-viewport dark dashboard with selectable topics and internal table scrolling.
+- Clicks, Impressions, CTR and Position charts with site selection and previous-period overlay.
+- SEO strategy segmented into priorities, site performance, keyword overlaps and site playbooks.
+- Read-only GSC device, country, Search Appearance breakdowns and Sitemap diagnostics. Sitemap totals are not indexed-URL totals.
+- UTF-8 CSV export with spreadsheet formula neutralization. All property queries are permission-checked and cached in D1.
+- Validate with npm run verify:dashboard and npm run typecheck.

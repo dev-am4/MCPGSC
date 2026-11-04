@@ -406,6 +406,18 @@ async function loadView(){
  }catch(e){if(current===state.requestId)state.error=e.message||'Unknown error'}
  finally{if(current===state.requestId){state.loading=false;render()}}
 }
+async function refresh(){
+ var request=++state.requestId;
+ try{
+  state.loading=true;state.error='';render();
+  var result=await api('/api/refresh',{method:'POST'});
+  if(request!==state.requestId)return;
+  state.sites=result.sites||[];
+  state.overview=null;state.strategy=null;state.rows=[];state.segmentRows=[];state.sitemapRows=[];
+  state.loading=false;
+  await loadView();
+ }catch(e){if(request===state.requestId){state.loading=false;state.error=e.message||'Refresh failed';render()}}
+}
 function csvSafe(value){
  var s=String(value===null||value===undefined?'':value);
  if(/^[\s]*[=+\-@]/.test(s))s="'"+s;
