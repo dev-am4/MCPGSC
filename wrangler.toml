@@ -36,3 +36,8 @@ database_name = "mcpgsc"
 directory = "./assets"
 binding = "ASSETS"
 run_worker_first = ["/", "/api/*", "/auth/*", "/oauth/*", "/mcp", "/health", "/.well-known/*", "/favicon.ico", "/favicon.svg", "/logo.svg"]
+
+# Cloudflare Git previews must not use the production OAuth callback origin.
+# Preview requests are isolated from production login; use the real production URL only above.
+[previews.vars]
+APP_URL = "https://mcpgsc-preview.invalid"

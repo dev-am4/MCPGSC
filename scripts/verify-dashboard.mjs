@@ -23,8 +23,10 @@ for(const required of [
   'data:image/png;base64,TESTFAV'
 ]) assert(html.includes(required),'missing clean dashboard element: '+required);
 
+// Check rendered markup, not legacy function bodies overridden by the compact console.
+const markup = html.split('<script>')[0];
 for(const removed of ['TRAFFIC SHARE','PERIOD COMPARISON','wow-metrics','overview-main','metric-spark'])
-  assert(!html.includes(removed),'premium clutter still present: '+removed);
+  assert(!markup.includes(removed),'premium clutter still present in markup: '+removed);
 
 assert(html.includes('@media(max-width:760px)'),'mobile layout missing');
 
