@@ -150,13 +150,14 @@ export function reduceMetrics(days: number, rows: SearchRow[]) {
   const recent = rows.filter(x => (x.keys?.[0] || '') >= r.start);
   const prior = rows.filter(x => (x.keys?.[0] || '') < r.start);
   const timeline: Day[] = recent.map(x => ({ date: x.keys?.[0] || '', ...totals([x]) }));
-  return { current: totals(recent), previous: totals(prior), timeline };
+  const previousTimeline: Day[] = prior.map(x => ({ date: x.keys?.[0] || '', ...totals([x]) }));
+  return { current: totals(recent), previous: totals(prior), timeline, previousTimeline };
 }
 
 export async function overview(env: Env, email: string, token: string, days: number) {
   const sites = await listSites(env, email, token);
   const r = range(days);
-  const results: Array<{ site: Site; current?: Totals; previous?: Totals; timeline?: Day[]; error?: string }> = [];
+  const results: Array<{ site: Site; current?: Totals; previous?: Totals; timeline?: Day[]; previousTimeline?: Day[]; error?: string }> = [];
   // Controlled concurrency prevents quota spikes with larger GSC accounts.
   for (let i = 0; i < sites.length; i += 4) {
     const batch = await Promise.all(sites.slice(i, i + 4).map(async site => {
@@ -184,8 +185,16 @@ export async function overview(env: Env, email: string, token: string, days: num
   }
   const timeline = [...combined.entries()].sort((a, b) => a[0].localeCompare(b[0]))
     .map(([date, day]) => ({ date, ...totals(day) }));
-  return { days, period: { start: r.start, end: r.end }, total: sum('current'),
-    previous: sum('previous'), timeline, sites: results, partial: success.length !== sites.length,
+  const combinedPrior = new Map<string, SearchRow[]>();
+  for (const result of success) for (const day of result.previousTimeline || []) {
+    if (!combinedPrior.has(day.date)) combinedPrior.set(day.date, []);
+    combinedPrior.get(day.date)!.push({ ...day, keys: [day.date] });
+  }
+  const previousTimeline = [...combinedPrior.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, day]) => ({ date, ...totals(day) }));
+  return { days, period: { start: r.start, end: r.end, previousStart: r.previousStart,
+      previousEnd: relativeDay(-days - 3) }, total: sum('current'),
+    previous: sum('previous'), timeline, previousTimeline, sites: results, partial: success.length !== sites.length,
     connected: sites.length, successful: success.length, updatedAt: new Date().toISOString() };
 }
 
@@ -196,6 +205,40 @@ export async function detailRows(env: Env, email: string, token: string, propert
     () => analytics(token, property, { startDate: r.start, endDate: r.end, dimensions: [dimension], rowLimit: 250 }));
 }
 
+
+export type SegmentDimension = 'device' | 'country' | 'searchAppearance';
+
+/** Query only after a property is authorized; short caching keeps GSC quota under control. */
+export async function segmentRows(env: Env, email: string, token: string,
+  property: string, dimension: SegmentDimension, days: number) {
+  findSite(await listSites(env, email, token), property);
+  const r = range(days);
+  return cached(env, ['segment-v1', email, property, dimension, days, r.end].join(':'),
+    CACHE_HOURS * 3600,
+    () => analytics(token, property, { startDate: r.start, endDate: r.end,
+      dimensions: [dimension], rowLimit: dimension === 'country' ? 250 : 80 }));
+}
+
+export type SitemapEntry = { path: string; lastDownloaded?: string; lastSubmitted?: string;
+  isPending?: boolean; isSitemapsIndex?: boolean; errors: number; warnings: number;
+  contents: Array<{ type: string; submitted: number }> };
+
+export async function sitemapRows(env: Env, email: string, token: string, property: string): Promise<SitemapEntry[]> {
+  findSite(await listSites(env, email, token), property);
+  return cached(env, ['sitemap-v1', email, property].join(':'), CACHE_HOURS * 3600, async () => {
+    const response = await googleRequest<{ sitemap?: Array<Record<string, unknown>> }>(
+      token, '/webmasters/v3/sites/' + encodeURIComponent(property) + '/sitemaps');
+    return (response.sitemap || []).slice(0, 250).map((row): SitemapEntry => ({
+      path: String(row.path || ''), lastDownloaded: String(row.lastDownloaded || '') || undefined,
+      lastSubmitted: String(row.lastSubmitted || '') || undefined,
+      isPending: Boolean(row.isPending), isSitemapsIndex: Boolean(row.isSitemapsIndex),
+      errors: Math.max(0, Number(row.errors || 0)), warnings: Math.max(0, Number(row.warnings || 0)),
+      contents: (Array.isArray(row.contents) ? row.contents : []).map((v: any) => ({
+        type: String(v.type || ''), submitted: Math.max(0, Number(v.submitted || 0))
+      }))
+    }));
+  });
+}
 
 type StrategyMetric = Totals & { key: string; deltaClicks: number; deltaImpressions: number; previousClicks: number; previousImpressions: number; previousCtr: number; previousPosition: number; score: number; missedClicks: number };
 

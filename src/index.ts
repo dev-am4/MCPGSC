@@ -1,7 +1,7 @@
 import type { Env } from './types';
 import { HttpError } from './types';
 import { allowedEmail, cookie, createSession, encryptToken, randomState, readSession, validateConfig, constantEqual } from './security';
-import { detailRows, getAccessToken, getAccount, inspection, listSites, overview, strategyOverview } from './google';
+import { detailRows, getAccessToken, getAccount, inspection, listSites, overview, strategyOverview, segmentRows, sitemapRows } from './google';
 import { handleMcp } from './mcp';
 import { HTML } from './ui';
 import { diagnostics } from './diagnostics';
@@ -132,6 +132,22 @@ async function handleApi(req: Request, env: Env, url: URL): Promise<Response> {
     return json(await strategyOverview(env, email, token, days));
   }
 
+  if (path === '/api/segments' && method === 'GET') {
+    const property = url.searchParams.get('property') || '';
+    const dimension = url.searchParams.get('dimension') || '';
+    if (!property) throw new HttpError(400, 'property is required');
+    if (!['device', 'country', 'searchAppearance'].includes(dimension))
+      throw new HttpError(400, 'dimension must be device, country, or searchAppearance');
+    const token = await getAccessToken(env, email);
+    return json(await segmentRows(env, email, token, property,
+      dimension as 'device' | 'country' | 'searchAppearance', getDays(url.searchParams.get('days'))));
+  }
+  if (path === '/api/sitemaps' && method === 'GET') {
+    const property = url.searchParams.get('property') || '';
+    if (!property) throw new HttpError(400, 'property is required');
+    const token = await getAccessToken(env, email);
+    return json(await sitemapRows(env, email, token, property));
+  }
   if (path === '/api/details' && method === 'GET') {
     const dimension = url.searchParams.get('dimension');
     if (dimension !== 'query' && dimension !== 'page') throw new HttpError(400, 'dimension must be query or page');
@@ -149,16 +165,16 @@ async function handleApi(req: Request, env: Env, url: URL): Promise<Response> {
   }
   if (path === '/api/refresh' && method === 'POST') {
     guardOrigin(req, env);
-    await env.DB.prepare('DELETE FROM cache WHERE cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ?')
-      .bind('sites:' + email, 'metrics:' + email + ':%', 'detail:' + email + ':%', 'strategy-v1:' + email + ':%').run();
+    await env.DB.prepare('DELETE FROM cache WHERE cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ?')
+      .bind('sites:' + email, 'metrics:' + email + ':%', 'detail:' + email + ':%', 'strategy-v1:' + email + ':%', 'segment-v1:' + email + ':%', 'sitemap-v1:' + email + ':%').run();
     const token = await getAccessToken(env, email);
     return json({ sites: await listSites(env, email, token, true) });
   }
   if (path === '/api/disconnect' && method === 'POST') {
     guardOrigin(req, env);
     await env.DB.prepare('DELETE FROM accounts WHERE email=?').bind(email).run();
-    await env.DB.prepare('DELETE FROM cache WHERE cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ?')
-      .bind('sites:' + email, 'metrics:' + email + ':%', 'detail:' + email + ':%', 'strategy-v1:' + email + ':%').run();
+    await env.DB.prepare('DELETE FROM cache WHERE cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ?')
+      .bind('sites:' + email, 'metrics:' + email + ':%', 'detail:' + email + ':%', 'strategy-v1:' + email + ':%', 'segment-v1:' + email + ':%', 'sitemap-v1:' + email + ':%').run();
     const response = json({ disconnected: true });
     response.headers.append('Set-Cookie', cookie('mcpgsc_session', '', req, 0));
     return response;
