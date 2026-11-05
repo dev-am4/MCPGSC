@@ -420,8 +420,6 @@ async function refresh(){
  }catch(e){if(current===state.requestId)state.error=e.message||'Refresh failed'}
  finally{if(current===state.requestId){state.loading=false;render()}}
 }
-.message||'Refresh failed';render()}}
-}
 function csvSafe(value){
  var s=String(value===null||value===undefined?'':value);
  if(/^[\s]*[=+\-@]/.test(s))s="'"+s;
