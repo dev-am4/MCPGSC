@@ -120,6 +120,17 @@ html,body{height:100%;overflow:hidden;background:var(--bg)}
  .console-statline{gap:6px}
 }
 @media(max-height:660px){.container{padding-top:11px}.console-chart{height:183px}.console-fullchart{height:245px}.console-table{max-height:42dvh}}
+.ai-time{white-space:nowrap;font-size:10px}
+.ai-list{display:grid;gap:8px;overflow:auto;max-height:calc(100dvh - 285px);scrollbar-width:thin}
+.ai-card{border:1px solid var(--line);background:#151e1b;border-radius:11px;padding:12px 14px}
+.ai-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+.ai-card strong{font-size:12px}.ai-card p{font-size:11px;color:#a7bcb1;line-height:1.5;overflow-wrap:anywhere;margin:6px 0}
+.ai-card details{font-size:10px;color:#a7bcb1;margin-top:7px}.ai-card summary{cursor:pointer}
+.ai-priority{font-size:10px;border:1px solid #54725e;border-radius:6px;padding:3px 6px;color:#c0f1cf}
+.ai-priority.high{border-color:#a95859;color:#ffc0c0}.ai-priority.low{border-color:#658199;color:#c2def4}
+#ai-site{max-width:220px}
+@media(max-width:760px){.ai-time{display:none}.ai-list{max-height:calc(100dvh - 315px)}}
+
 `;
 export const CONSOLE_NAV = "\n<nav class=\"topic-tabs\" aria-label=\"เลือกหัวข้อ\">\n<button type=\"button\" data-view=\"overview\" class=\"active\">ภาพรวม</button>\n<button type=\"button\" data-view=\"trend\">กราฟ</button>\n<button type=\"button\" data-view=\"strategy\">วิเคราะห์</button>\n<button type=\"button\" data-view=\"opportunities\">โอกาส</button>\n<button type=\"button\" data-view=\"queries\">คำค้น</button>\n<button type=\"button\" data-view=\"pages\">หน้าเว็บ</button>\n<button type=\"button\" data-view=\"segments\">อุปกรณ์ / ประเทศ</button>\n<button type=\"button\" data-view=\"sitemaps\">Sitemap</button>\n<button type=\"button\" data-view=\"inspect\">ตรวจ URL</button>\n<button type=\"button\" data-view=\"diagnostics\">ระบบ</button>\n<button type=\"button\" data-view=\"settings\">ตั้งค่า</button>\n</nav>";
 export const CONSOLE_SIDE_NAV = "\n<nav class=\"nav\" id=\"nav\" aria-label=\"เมนูหลัก\">\n<button data-view=\"overview\" class=\"active\">ภาพรวม</button>\n<button data-view=\"trend\">กราฟและเทรนด์</button>\n<button data-view=\"strategy\">วิเคราะห์ SEO</button>\n<button data-view=\"opportunities\">โอกาสอันดับ</button>\n<button data-view=\"sitemaps\">ดัชนี / Sitemap</button>\n<button data-view=\"diagnostics\">สถานะระบบ</button>\n<button data-view=\"settings\">ตั้งค่า</button>\n</nav>";
@@ -166,7 +177,8 @@ function render(){
  else if(state.view==='segments')renderSegments();
  else if(state.view==='sitemaps')renderSitemaps();
  else if(state.view==='inspect')renderInspect();
- else if(state.view==='diagnostics')renderDiagnostics();
+ else if(state.view==='ai')renderAi();
+  else if(state.view==='diagnostics')renderDiagnostics();
  else renderSettings();
 }
 function toggleMetric(){
@@ -373,50 +385,39 @@ function renderSitemaps(){
  rows.map(function(x){var submitted=(x.contents||[]).reduce(function(n,v){return n+Number(v.submitted||0)},0);return '<tr><td class="name wrap"><a href="'+esc(x.path)+'" target="_blank" rel="noopener noreferrer">'+esc(x.path)+'</a></td>'+
  '<td class="right">'+fmt(submitted)+'</td><td class="right">'+fmt(x.errors)+'</td><td class="right">'+fmt(x.warnings)+'</td><td>'+esc(x.lastDownloaded?x.lastDownloaded.slice(0,10):'—')+'</td>'+
  '<td>'+(x.isPending?'กำลังประมวลผล':x.errors?'ตรวจข้อผิดพลาด':x.warnings?'มีคำเตือน':'ปกติ')+'</td></tr>';}).join('')+'</tbody></table></div>';
- html+='</section><p class="console-note">จำนวน URLs คือค่าที่ Search Console รายงาน แยกตาม Sitemap · Sitemap Index อาจมีรายการซ้อนกัน และไม่ใช่จำนวนหน้าที่ Index แล้ว</p>';
- el('content').innerHTML=html;
+ html+='</section><p class="console-note">จำนวน URLs คือค่าที่ Search Console รายงาน แยกตาม Sitemap · Sitemap Index อาจมีรายการซ้อนกัน และไม่ใช่จำนวนหน้าที่ Index แล้วfunction syncSnapshot(){
+ var snap=state.snapshot;if(!snap)return;
+ state.overview=snap.overview;state.strategy=snap.strategy;state.sites=snap.sites||[];
+ if(!state.sites.some(function(x){return x.property===state.site}))state.site=state.sites[0]?.property||'';
+ var asset=(snap.assets||{})[state.site]||{};
+ state.rows=(state.view==='pages'||(state.view==='opportunities'&&state.opDimension==='page'))?asset.pages||[]:asset.queries||[];
+ state.segmentRows=(asset.segments||{})[state.segmentDimension]||[];
+ state.sitemapRows=asset.sitemaps||[];
 }
 async function loadView(){
- if(!state.me||!state.me.authenticated)return;
- var current=++state.requestId,view=state.view,days=state.days,property=state.site;
- try{
-  state.loading=true;state.error='';render();
-  if(view==='overview'||view==='trend'){
-   if(!state.overview||state.overview.days!==days){var a=await api('/api/overview?days='+days);if(current===state.requestId)state.overview=a;}
-  }else if(view==='strategy'){
-   if(!state.strategy||state.strategy.days!==days){var b=await api('/api/strategy?days='+days);if(current===state.requestId)state.strategy=b;}
-  }else if(view==='sites'){var c=await api('/api/sites');if(current===state.requestId)state.sites=c;}
-  else if(view==='diagnostics'){var z=await api('/api/diagnostics');if(current===state.requestId)state.diagnostics=z;}
-  else if(['queries','pages','opportunities','inspect','segments','sitemaps'].includes(view)){
-   if(!state.sites?.length){var s=await api('/api/sites');if(current===state.requestId)state.sites=s;}
-   if(!state.sites.some(function(x){return x.property===state.site}))state.site=state.sites[0]?.property||'';
-   property=state.site;
-   if(property&&(view==='queries'||view==='pages'||view==='opportunities')){
-    var dimension=view==='opportunities'?state.opDimension:view==='queries'?'query':'page';
-    var rows=await api('/api/details?dimension='+dimension+'&days='+days+'&property='+encodeURIComponent(property));
-    if(current===state.requestId)state.rows=rows;
-   }else if(property&&view==='segments'){
-    var segments=await api('/api/segments?dimension='+state.segmentDimension+'&days='+days+'&property='+encodeURIComponent(property));
-    if(current===state.requestId)state.segmentRows=segments;
-   }else if(property&&view==='sitemaps'){
-    var sitemap=await api('/api/sitemaps?property='+encodeURIComponent(property));
-    if(current===state.requestId)state.sitemapRows=sitemap;
-   }
-  }
- }catch(e){if(current===state.requestId)state.error=e.message||'Unknown error'}
+ if(!state.me?.authenticated)return;
+ var current=++state.requestId,days=state.days;
+ if(state.view==='diagnostics'){
+  try{state.loading=true;state.error='';render();var diagnostics=await api('/api/diagnostics');if(current===state.requestId)state.diagnostics=diagnostics}
+  catch(e){if(current===state.requestId)state.error=e.message||'Diagnostics failed'}
+  finally{if(current===state.requestId){state.loading=false;render()}}return;
+ }
+ if(state.view==='settings'||state.view==='inspect'){syncSnapshot();render();return}
+ if(state.snapshots[days]){state.snapshot=state.snapshots[days];syncSnapshot();state.loading=false;state.error='';render();return}
+ try{state.loading=true;state.error='';render();var snap=await api('/api/snapshot?days='+days);
+  if(current!==state.requestId)return;state.snapshots[days]=snap;state.snapshot=snap;syncSnapshot();
+ }catch(e){if(current===state.requestId)state.error=e.message||'Snapshot failed'}
  finally{if(current===state.requestId){state.loading=false;render()}}
 }
 async function refresh(){
- var request=++state.requestId;
- try{
-  state.loading=true;state.error='';render();
-  var result=await api('/api/refresh',{method:'POST'});
-  if(request!==state.requestId)return;
-  state.sites=result.sites||[];
-  state.overview=null;state.strategy=null;state.rows=[];state.segmentRows=[];state.sitemapRows=[];
-  state.loading=false;
-  await loadView();
- }catch(e){if(request===state.requestId){state.loading=false;state.error=e.message||'Refresh failed';render()}}
+ var current=++state.requestId;
+ try{state.loading=true;state.error='';render();
+  var snap=await api('/api/refresh?days='+state.days,{method:'POST'});
+  if(current!==state.requestId)return;state.snapshots={};state.snapshots[state.days]=snap;state.snapshot=snap;syncSnapshot();
+ }catch(e){if(current===state.requestId)state.error=e.message||'Refresh failed'}
+ finally{if(current===state.requestId){state.loading=false;render()}}
+}
+.message||'Refresh failed';render()}}
 }
 function csvSafe(value){
  var s=String(value===null||value===undefined?'':value);
@@ -459,4 +460,65 @@ document.addEventListener('click',function(event){
 document.addEventListener('change',function(event){
  if(event.target.id==='chart-site'){state.chartSite=event.target.value;render()}
 });
+Object.assign(state,{snapshot:null,snapshots:{},aiSite:'all'});
+headings.ai=['คำสั่ง AI แก้ SEO','วิเคราะห์ปัญหาและสร้างคำสั่งพร้อมคัดลอก'];
+document.querySelectorAll('.topic-tabs,#nav').forEach(function(nav){
+ if(nav.querySelector('[data-view="ai"]'))return;
+ var button=document.createElement('button');button.type='button';button.dataset.view='ai';
+ button.textContent='คำสั่ง AI';var strategy=nav.querySelector('[data-view="strategy"]');
+ if(strategy)strategy.insertAdjacentElement('afterend',button);else nav.appendChild(button);
+});
+function renderAi(){
+ var s=state.snapshot;if(!s){el('content').innerHTML='<div class="empty">ไม่มีข้อมูล</div>';return}
+ var all=s.issues||[],chosen=state.aiSite;
+ var issues=chosen==='all'?all:all.filter(function(x){return x.property===chosen});
+ var html='<div class="console-statline"><div class="console-pair"><span class="console-pill">'+fmt(issues.length)+' รายการ</span>'+
+ '<span class="console-muted">ด่วน '+issues.filter(function(x){return x.severity==='high'}).length+' · ต้องตรวจ '+issues.filter(function(x){return x.severity==='medium'}).length+'</span></div>'+
+ '<div class="console-pair"><select id="ai-site" class="inline-input"><option value="all">ทุกเว็บไซต์</option>'+
+ (s.sites||[]).map(function(site){return '<option value="'+esc(site.property)+'"'+(chosen===site.property?' selected':'')+'>'+esc(site.label)+'</option>'}).join('')+
+ '</select><button class="quiet-btn" data-ai-all="1">คัดลอกคำสั่งรวม</button></div></div>';
+ if(s.partial)html+='<p class="notice">มีข้อมูลบางมิติที่โหลดไม่สำเร็จ กรุณาตรวจ API ก่อนสรุปปัญหา</p>';
+ html+='<section class="console-panel"><div class="console-panel-head"><h2>ประเด็นที่ควรแก้</h2><span class="console-mini">อ้างอิง Google Search Console</span></div>';
+ html+=issues.length?'<div class="ai-list">'+issues.slice(0,90).map(function(issue){
+  var idx=all.indexOf(issue);
+  return '<article class="ai-card"><div class="ai-head"><div><span class="ai-priority '+esc(issue.severity)+'">'+
+   (issue.severity==='high'?'ด่วน':issue.severity==='medium'?'ตรวจ':'โอกาส')+'</span> <span class="console-muted">'+esc(issue.site)+'</span></div>'+
+   '<button class="quiet-btn" data-ai-copy="'+idx+'">คัดลอกคำสั่ง</button></div>'+
+   '<strong>'+esc(issue.title)+'</strong><p>'+esc(issue.evidence)+'</p>'+
+   '<details><summary>รายละเอียดการวิเคราะห์</summary><p>สมมติฐาน: '+esc(issue.hypothesis)+'</p><p>ตรวจต่อ: '+esc(issue.action)+'</p></details></article>';
+ }).join('')+'</div>':'<div class="empty">ยังไม่พบสัญญาณที่เข้าเกณฑ์ ไม่ได้หมายความว่าไม่มีปัญหา SEO</div>';
+ html+='</section><p class="console-note">GSC มีความหน่วงและไม่แสดงคำค้นครบทุกคำ · AI ต้องตรวจเว็บและโค้ดจริงก่อนแก้</p>';
+ el('content').innerHTML=html;
+}
+function copyPrompt(text){
+ if(!navigator.clipboard?.writeText){alert('กรุณาเปิดผ่าน HTTPS เพื่อใช้ Clipboard');return}
+ navigator.clipboard.writeText(text).then(function(){el('page-subtitle').textContent='คัดลอกแล้ว · วางให้ AI ภายนอกได้ทันที'})
+ .catch(function(){alert('คัดลอกไม่สำเร็จ กรุณาตรวจสิทธิ์ Clipboard')});
+}
+document.addEventListener('click',function(event){
+ var button=event.target.closest('button');if(!button||!state.snapshot)return;
+ if(button.dataset.aiCopy!==undefined){var item=state.snapshot.issues?.[Number(button.dataset.aiCopy)];if(item)copyPrompt(item.prompt);return}
+ if(button.dataset.aiAll){
+  var items=(state.snapshot.issues||[]).filter(function(i){return state.aiSite==='all'||i.property===state.aiSite});
+  copyPrompt(items.length?items.map(function(i,n){return '=== งาน '+(n+1)+' ===\n'+i.prompt}).join('\n\n'):
+   'ตรวจ SEO ของ '+state.aiSite+' จาก GSC จริง ตรวจ sitemap/robots/canonical/metadata/indexing/performance และโค้ด ก่อนแก้ ทดสอบ CI และรายงานผล');
+ }
+});
+document.addEventListener('change',function(event){if(event.target.id==='ai-site'){state.aiSite=event.target.value;render()}});
+var originalTools=renderTools;
+renderTools=function(){
+ originalTools();
+ if(state.snapshot?.generatedAt&&state.view!=='settings'){
+  var d=new Date(state.snapshot.generatedAt);
+  el('top-tools').insertAdjacentHTML('afterbegin','<span class="console-muted ai-time">ข้อมูลกลาง '+esc(d.toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}))+'</span>');
+ }
+};
+init=async function(){
+ try{state.opNotes=JSON.parse(localStorage.getItem('mcpgsc-op-notes')||'{}')}catch(_){state.opNotes={}}
+ state.view=headings[location.hash.slice(1)]?location.hash.slice(1):'overview';
+ try{state.me=await api('/api/me')}catch(e){state.me={authenticated:false};state.error=e.message||'Login failed'}
+ render();if(state.me?.authenticated&&!state.error)await loadView();
+};
+
+
 `;
