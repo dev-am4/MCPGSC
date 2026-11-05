@@ -5,6 +5,7 @@ import { detailRows, getAccessToken, getAccount, inspection, listSites, overview
 import { handleMcp } from './mcp';
 import { HTML } from './ui';
 import { diagnostics } from './diagnostics';
+import { dashboardSnapshot } from './snapshot';
 import { ensureSchema } from './bootstrap';
 import { authDiscovery, registerClient } from './oauth-register';
 import { authorize, approve } from './oauth-approval';
@@ -114,6 +115,7 @@ async function handleApi(req: Request, env: Env, url: URL): Promise<Response> {
     return account ? json({ authenticated: true, email }) : json({ authenticated: false });
   }
   const email = await authUser(req, env);
+  if (path === '/api/snapshot' && method === 'GET') return json(await dashboardSnapshot(env,email,getDays(url.searchParams.get('days'))));
   if (path === '/api/diagnostics' && method === 'GET') {
     return json(await diagnostics(env, email));
   }
@@ -165,16 +167,15 @@ async function handleApi(req: Request, env: Env, url: URL): Promise<Response> {
   }
   if (path === '/api/refresh' && method === 'POST') {
     guardOrigin(req, env);
-    await env.DB.prepare('DELETE FROM cache WHERE cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ?')
-      .bind('sites:' + email, 'metrics:' + email + ':%', 'metrics-v2:' + email + ':%', 'detail:' + email + ':%', 'strategy-v1:' + email + ':%', 'segment-v1:' + email + ':%', 'sitemap-v1:' + email + ':%').run();
-    const token = await getAccessToken(env, email);
-    return json({ sites: await listSites(env, email, token, true) });
+    await env.DB.prepare('DELETE FROM cache WHERE cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ?')
+      .bind('sites:' + email, 'metrics:' + email + ':%', 'metrics-v2:' + email + ':%', 'detail:' + email + ':%', 'strategy-v1:' + email + ':%', 'segment-v1:' + email + ':%', 'sitemap-v1:' + email + ':%', 'snapshot-v1:' + email + ':%').run();
+    return json(await dashboardSnapshot(env,email,getDays(url.searchParams.get('days'))));
   }
   if (path === '/api/disconnect' && method === 'POST') {
     guardOrigin(req, env);
     await env.DB.prepare('DELETE FROM accounts WHERE email=?').bind(email).run();
     await env.DB.prepare('DELETE FROM cache WHERE cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ? OR cache_key LIKE ?')
-      .bind('sites:' + email, 'metrics:' + email + ':%', 'metrics-v2:' + email + ':%', 'detail:' + email + ':%', 'strategy-v1:' + email + ':%', 'segment-v1:' + email + ':%', 'sitemap-v1:' + email + ':%').run();
+      .bind('sites:' + email, 'metrics:' + email + ':%', 'metrics-v2:' + email + ':%', 'detail:' + email + ':%', 'strategy-v1:' + email + ':%', 'segment-v1:' + email + ':%', 'sitemap-v1:' + email + ':%', 'snapshot-v1:' + email + ':%').run();
     const response = json({ disconnected: true });
     response.headers.append('Set-Cookie', cookie('mcpgsc_session', '', req, 0));
     return response;
