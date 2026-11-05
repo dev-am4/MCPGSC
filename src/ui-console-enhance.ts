@@ -385,7 +385,10 @@ function renderSitemaps(){
  rows.map(function(x){var submitted=(x.contents||[]).reduce(function(n,v){return n+Number(v.submitted||0)},0);return '<tr><td class="name wrap"><a href="'+esc(x.path)+'" target="_blank" rel="noopener noreferrer">'+esc(x.path)+'</a></td>'+
  '<td class="right">'+fmt(submitted)+'</td><td class="right">'+fmt(x.errors)+'</td><td class="right">'+fmt(x.warnings)+'</td><td>'+esc(x.lastDownloaded?x.lastDownloaded.slice(0,10):'—')+'</td>'+
  '<td>'+(x.isPending?'กำลังประมวลผล':x.errors?'ตรวจข้อผิดพลาด':x.warnings?'มีคำเตือน':'ปกติ')+'</td></tr>';}).join('')+'</tbody></table></div>';
- html+='</section><p class="console-note">จำนวน URLs คือค่าที่ Search Console รายงาน แยกตาม Sitemap · Sitemap Index อาจมีรายการซ้อนกัน และไม่ใช่จำนวนหน้าที่ Index แล้วfunction syncSnapshot(){
+ html+='</section><p class="console-note">จำนวน URLs คือค่าที่ Search Console รายงาน แยกตาม Sitemap · Sitemap Index อาจมีรายการซ้อนกัน และไม่ใช่จำนวนหน้าที่ Index แล้ว</p>';
+ el('content').innerHTML=html;
+}
+function syncSnapshot(){
  var snap=state.snapshot;if(!snap)return;
  state.overview=snap.overview;state.strategy=snap.strategy;state.sites=snap.sites||[];
  if(!state.sites.some(function(x){return x.property===state.site}))state.site=state.sites[0]?.property||'';
@@ -519,6 +522,7 @@ init=async function(){
  try{state.me=await api('/api/me')}catch(e){state.me={authenticated:false};state.error=e.message||'Login failed'}
  render();if(state.me?.authenticated&&!state.error)await loadView();
 };
+
 
 
 `;
